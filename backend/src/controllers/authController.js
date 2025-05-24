@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const { generateToken } = require('../utils/jwt');
-const { redisClient } = require('../../config/database');
+const { redisClient } = require('../config/database');
 
 // Register new user
 const register = async (req, res) => {

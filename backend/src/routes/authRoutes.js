@@ -1,6 +1,5 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-
 const {
   register,
   login,
@@ -8,9 +7,7 @@ const {
   getProfile,
   updateProfile
 } = require('../controllers/authController');
-
 const { authenticate } = require('../middleware/auth');
-
 const {
   validateRegister,
   validateLogin,
@@ -42,7 +39,7 @@ const generalLimiter = rateLimit({
 });
 
 // Public routes (with rate limiting)
-router.post('/register', 
+router.post('/register',
   authLimiter,
   validateRegister,
   handleValidationErrors,

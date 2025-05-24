@@ -1,6 +1,6 @@
 const { verifyToken } = require('../utils/jwt');
 const User = require('../models/User');
-const { redisClient } = require('../../config/database');
+const { redisClient } = require('../config/database');
 
 const authenticate = async (req, res, next) => {
   try {
