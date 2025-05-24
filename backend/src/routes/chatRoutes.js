@@ -1,15 +1,15 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { 
-  createChatRoom, 
-  getUserChatRooms, 
-  getChatRoom, 
-  getChatRoomMessages, 
-  joinChatRoom, 
-  leaveChatRoom 
+const {
+  createChatRoom,
+  getUserChatRooms,
+  getChatRoom,
+  getChatRoomMessages,
+  sendMessage,  // ADD THIS LINE
+  joinChatRoom,
+  leaveChatRoom
 } = require('../controllers/chatController');
 const { authenticate } = require('../middleware/auth');
-
 const router = express.Router();
 
 // Rate limiting for chat routes
@@ -31,6 +31,7 @@ router.post('/rooms', createChatRoom);
 router.get('/rooms', getUserChatRooms);
 router.get('/rooms/:roomId', getChatRoom);
 router.get('/rooms/:roomId/messages', getChatRoomMessages);
+router.post('/rooms/:roomId/messages', sendMessage); // ADD THIS LINE
 router.post('/rooms/:roomId/join', joinChatRoom);
 router.post('/rooms/:roomId/leave', leaveChatRoom);
 

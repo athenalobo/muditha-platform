@@ -9,35 +9,26 @@ const messageSchema = new mongoose.Schema({
   sender: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: function() {
+      // Only require sender if it's not an AI message
+      return this.type !== 'ai_response';
+    }
   },
   content: {
     type: String,
     required: true,
-    maxlength: 5000
+    trim: true
   },
-  messageType: {
+  type: {
     type: String,
-    enum: ['text', 'ai_response', 'system', 'image', 'file'],
+    enum: ['text', 'image', 'file', 'ai_response', 'system'],
     default: 'text'
   },
+  // Make metadata flexible to store objects
   metadata: {
-    sentiment: String, // Will be populated by AI
-    riskLevel: {
-      type: String,
-      enum: ['low', 'medium', 'high', 'crisis'],
-      default: 'low'
-    },
-    aiAnalysis: {
-      emotion: String,
-      topics: [String],
-      urgency: Number // 1-10 scale
-    }
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   },
-  isEdited: { type: Boolean, default: false },
-  editedAt: Date,
-  isDeleted: { type: Boolean, default: false },
-  deletedAt: Date,
   readBy: [{
     user: {
       type: mongoose.Schema.Types.ObjectId,
@@ -48,12 +39,22 @@ const messageSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  isEdited: {
+    type: Boolean,
+    default: false
+  },
+  editedAt: Date,
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: Date
+}, {
+  timestamps: true
 });
 
-// Index for efficient queries
+// Index for efficient querying
 messageSchema.index({ chatRoom: 1, createdAt: -1 });
-messageSchema.index({ sender: 1, createdAt: -1 });
+messageSchema.index({ sender: 1 });
 
 module.exports = mongoose.model('Message', messageSchema);

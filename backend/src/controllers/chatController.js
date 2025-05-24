@@ -3,6 +3,11 @@ const Message = require('../models/Message');
 const User = require('../models/User');
 const { v4: uuidv4 } = require('uuid');
 
+// Import AI services
+const geminiService = require('../services/ai/geminiService');
+const sentimentService = require('../services/ai/sentimentService');
+const crisisDetection = require('../services/ai/crisisDetection');
+
 // Create a new chat room
 const createChatRoom = async (req, res) => {
   try {
@@ -246,6 +251,187 @@ const getChatRoomMessages = async (req, res) => {
   }
 };
 
+// NEW: Send message with AI integration
+const sendMessage = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { content, type = 'text' } = req.body;
+    const userId = req.user._id;
+
+    // Validate input
+    if (!content || !content.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message content is required'
+      });
+    }
+
+    // Verify user has access to this room
+    const chatRoom = await ChatRoom.findById(roomId);
+    if (!chatRoom || !chatRoom.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'Chat room not found'
+      });
+    }
+
+    const isParticipant = chatRoom.participants.some(
+      p => p.user.toString() === userId.toString() && p.isActive
+    );
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied to this chat room'
+      });
+    }
+
+    // Create user message
+    const userMessage = new Message({
+      chatRoom: roomId,
+      sender: userId,
+      content: content.trim(),
+      type,
+      createdAt: new Date()
+    });
+
+    await userMessage.save();
+    await userMessage.populate('sender', 'profile email');
+
+    // Update room last activity
+    chatRoom.lastActivity = new Date();
+    await chatRoom.save();
+
+    // Emit user message to room
+    if (req.io) {
+      req.io.to(roomId).emit('newMessage', {
+        _id: userMessage._id,
+        content: userMessage.content,
+        sender: userMessage.sender,
+        type: userMessage.type,
+        createdAt: userMessage.createdAt
+      });
+    }
+
+    let aiResponse = null;
+
+    // Generate AI response if AI is enabled for this room
+    if (chatRoom.aiAssistant && chatRoom.aiAssistant.isEnabled) {
+      try {
+        // AI Analysis
+        const sentiment = sentimentService.analyzeSentiment(content);
+        const crisis = crisisDetection.assessCrisisRisk(content);
+        const emotion = await geminiService.analyzeEmotionalState(content);
+
+        // Get conversation history for context
+        const recentMessages = await Message.find({
+          chatRoom: roomId,
+          isDeleted: false
+        })
+          .populate('sender', 'profile email')
+          .sort({ createdAt: -1 })
+          .limit(10);
+
+        // Generate AI response
+        let geminiResponse;
+        if (crisis.requiresIntervention) {
+          geminiResponse = {
+            message: crisisDetection.generateCrisisResponse(crisis.riskLevel),
+            model: 'crisis-intervention'
+          };
+        } else {
+          const history = recentMessages.reverse().map(msg => ({
+            role: msg.sender ? 'User' : 'Muditha',
+            content: msg.content
+          }));
+
+          geminiResponse = await geminiService.generateResponse(content, history);
+        }
+
+        // Create a system user for AI messages (you may want to create this once and reuse)
+        // For now, we'll create AI messages with a special sender ID or handle it differently
+        let aiSenderId = null;
+
+        // Option 1: Create a system user for AI (recommended)
+        // You should create this user once in your database setup
+        const systemUser = await User.findOne({ email: 'system@muditha.ai' });
+        if (systemUser) {
+          aiSenderId = systemUser._id;
+        }
+
+        // Save AI response as message
+        // Alternative approach - modify the AI message creation part in sendMessage:
+
+        // Save AI response as message (without system user)
+        const aiMessage = new Message({
+          chatRoom: roomId,
+          // sender: null, // Remove this line - let the schema handle it
+          content: geminiResponse.message,
+          type: 'ai_response',
+          metadata: {
+            sentiment: {
+              score: sentiment.score,
+              comparative: sentiment.comparative,
+              classification: sentiment.classification,
+              positive: sentiment.positive,
+              negative: sentiment.negative,
+              timestamp: new Date()
+            },
+            emotion: emotion,
+            crisis: {
+              riskLevel: crisis.riskLevel,
+              requiresIntervention: crisis.requiresIntervention,
+              timestamp: new Date()
+            },
+            model: geminiResponse.model,
+            timestamp: new Date(),
+            isAiGenerated: true
+          },
+          createdAt: new Date()
+        });
+
+        // Don't populate sender for AI messages
+        await aiMessage.save();
+
+        // Emit AI response to room (without sender info)
+        if (req.io) {
+          req.io.to(roomId).emit('newMessage', {
+            _id: aiMessage._id,
+            content: aiMessage.content,
+            sender: null,
+            type: 'ai_response',
+            metadata: aiMessage.metadata,
+            createdAt: aiMessage.createdAt,
+            isAI: true
+          });
+        }
+
+        aiResponse = aiMessage;
+
+      } catch (aiError) {
+        console.error('AI response error:', aiError);
+        // Continue without AI response if there's an error
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Message sent successfully',
+      data: {
+        userMessage,
+        aiResponse
+      }
+    });
+
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send message'
+    });
+  }
+};
+
 // Join a chat room
 const joinChatRoom = async (req, res) => {
   try {
@@ -360,6 +546,7 @@ module.exports = {
   getUserChatRooms,
   getChatRoom,
   getChatRoomMessages,
+  sendMessage, // This is the new function
   joinChatRoom,
   leaveChatRoom
 };
